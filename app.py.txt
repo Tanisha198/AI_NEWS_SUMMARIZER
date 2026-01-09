@@ -1,0 +1,142 @@
+# STEP 1
+
+!pip install requests
+!pip install transformers
+!pip install torch
+
+
+# STEP 2
+
+import requests
+from transformers import pipeline
+from IPython.display import display, Markdown
+
+
+# STEP 3 : load summarization model
+
+summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+
+
+# STEP 4 : Fetch news
+
+import requests
+
+def fetch_news(query, top=5):
+    api_key = "YOUR_API_KEY"
+
+    url = "https://newsapi.org/v2/everything"
+    params = {
+        "q": query,
+        "language": "en",
+        "sortBy": "publishedAt",
+        "pageSize": top,
+        "apiKey": api_key
+    }
+
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    if data.get("status") != "ok":
+        print("Error fetching news:", data.get("message"))
+        return []
+
+    news_list = []
+    for article in data.get("articles", []):
+        news_list.append({
+            "title": article.get("title", "No title"),
+            "content": article.get("content") or article.get("description") or "No content available.",
+            "url": article.get("url")
+        })
+
+    return news_list
+
+
+# STEP 5: SUMMARIZE NEWS
+
+def summarize_news(news_list):
+    summarized_news = []
+    for news in news_list:
+        if news["content"]:
+            summary = summarizer(news["content"], max_length=60, min_length=20, do_sample=False)[0]['summary_text']
+        else:
+            summary = "No summary available."
+        summarized_news.append({
+            "title": news["title"],
+            "summary": summary,
+            "url": news["url"]
+        })
+    return summarized_news
+
+
+# STEP 6 : USER INPUT
+
+user_input = input("Please Type what news you'd like to see: ").strip().lower()
+
+
+country_codes = {
+    "india": "in", "usa": "us", "uk": "gb", "germany": "de",
+    "france": "fr", "canada": "ca", "australia": "au"
+}
+
+
+filler_words = ["give", "us", "news", "of", "please", "show", "me", "top", "latest"]
+query_words = [word for word in user_input.split() if word not in filler_words]
+
+
+country = None
+for word in query_words:
+    if word in country_codes:
+        country = country_codes[word]
+
+    query = " ".join(query_words)
+
+
+# STEP 7 
+
+news_list = fetch_news(query=query, top=5)
+
+seen_titles = set()
+unique_news = []
+for news in news_list:
+    if news['title'] not in seen_titles:
+        seen_titles.add(news['title'])
+        unique_news.append(news)
+news_list = unique_news
+
+summarized_news = []
+
+for news in news_list:
+    content = news.get("content") or news.get("description") or ""
+
+    if content.strip():
+        content = content[:1000]
+        word_count = len(content.split())
+
+        max_len = min(40, word_count)
+        min_len = min(20, max_len)
+
+        try:
+            summary = summarizer(
+                content,
+                max_length=max_len,
+                min_length=min_len,
+                do_sample=False
+            )[0]["summary_text"]
+        except:
+            summary = "Summary could not be generated."
+    else:
+        summary = "No content available."
+
+    summarized_news.append({
+        "title": news.get("title", "No title"),
+        "summary": summary,
+        "url": news.get("url", "#")
+    })
+
+
+# STEP 8 : DISPLAY
+
+print(f"\nTop news for: {user_input.capitalize()}\n")
+
+for i, news in enumerate(summarized_news, 1):
+    display(Markdown(f"**{i}. {news['title']}**\n\n{news['summary']}\n\n[Read more]({news['url']})\n"))
